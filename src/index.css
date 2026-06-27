@@ -1,0 +1,134 @@
+@import 'tailwindcss';
+
+:root {
+  font-family: Tahoma, Verdana, 'Segoe UI', sans-serif;
+  color: #0f172a;
+  background: #245edb;
+  text-rendering: optimizeLegibility;
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+}
+
+* {
+  box-sizing: border-box;
+}
+
+html,
+body,
+#root {
+  margin: 0;
+  width: 100%;
+  height: 100%;
+}
+
+body {
+  overflow: hidden;
+}
+
+.xp-desktop {
+  background:
+    radial-gradient(circle at 20% 18%, rgba(255, 255, 255, 0.18), transparent 30%),
+    radial-gradient(circle at 87% 24%, rgba(146, 210, 255, 0.25), transparent 35%),
+    linear-gradient(180deg, #4f95ff 0%, #2e7be8 62%, #2a67cf 100%);
+}
+
+.xp-taskbar {
+  border-top: 1px solid #89b9ff;
+  background:
+    linear-gradient(180deg, #2c79ee 0%, #2167dd 48%, #1452c6 52%, #0f43ab 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.xp-start-button {
+  background: linear-gradient(180deg, #5cd856 0%, #2ea426 62%, #227d1b 100%);
+  border: 1px solid rgba(20, 82, 14, 0.9);
+  box-shadow:
+    inset 0 1px 0 rgba(255, 255, 255, 0.65),
+    inset 0 -1px 0 rgba(0, 0, 0, 0.28),
+    0 1px 2px rgba(0, 0, 0, 0.32);
+}
+
+.xp-start-button:hover {
+  filter: brightness(1.06);
+}
+
+.xp-quick-launch,
+.xp-clock {
+  border: 1px solid rgba(182, 216, 255, 0.7);
+  background: linear-gradient(180deg, #3f8af2 0%, #1b5cc9 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.5);
+}
+
+.xp-folder-grid {
+  display: grid;
+  gap: 10px;
+}
+
+.xp-folder-shortcut {
+  border: 1px solid transparent;
+}
+
+.xp-folder-shortcut:hover {
+  border-color: rgba(168, 214, 255, 0.6);
+  background: rgba(31, 99, 199, 0.2);
+}
+
+.xp-folder-shortcut:focus-visible {
+  outline: 1px solid rgba(176, 225, 255, 0.95);
+  background: rgba(31, 99, 199, 0.25);
+}
+
+.xp-folder-icon {
+  position: relative;
+  display: inline-block;
+  width: 30px;
+  height: 22px;
+  border: 1px solid #995d0e;
+  border-radius: 3px;
+  background: linear-gradient(180deg, #ffd77a 0%, #e8ad44 100%);
+  box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.45);
+}
+
+.xp-folder-icon::before {
+  content: '';
+  position: absolute;
+  left: 2px;
+  top: -5px;
+  width: 13px;
+  height: 7px;
+  border: 1px solid #995d0e;
+  border-bottom: none;
+  border-radius: 3px 3px 0 0;
+  background: linear-gradient(180deg, #ffe4a0 0%, #f0c261 100%);
+}
+
+.xp-folder-icon.small {
+  width: 18px;
+  height: 14px;
+}
+
+.xp-folder-icon.small::before {
+  width: 8px;
+  height: 4px;
+  top: -4px;
+}
+
+.xp-context-menu {
+  backdrop-filter: blur(0.5px);
+}
+
+.xp-context-item {
+  display: block;
+  width: 100%;
+  border: 1px solid transparent;
+  background: transparent;
+  padding: 4px 8px;
+  text-align: left;
+  font-size: 12px;
+  color: #1e293b;
+}
+
+.xp-context-item:hover {
+  border-color: #3b7dd8;
+  background: linear-gradient(180deg, #dceeff 0%, #c8e1ff 100%);
+}

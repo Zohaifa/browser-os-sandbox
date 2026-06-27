@@ -1,30 +1,16 @@
-## How to Contribute
+# React + Vite
 
-1. Create a new branch for your work. Do not commit directly to `main`.
+This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
 
-   ```bash
-   git checkout -b feature/your-feature-name
-   ```
+Currently, two official plugins are available:
 
-2. Make your changes and commit them with a clear message.
+- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
+- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
 
-   ```bash
-   git commit -m "Add login functionality"
-   ```
+## React Compiler
 
-3. Push your branch to GitHub.
+The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
 
-   ```bash
-   git push origin feature/your-feature-name
-   ```
+## Expanding the Oxlint configuration
 
-4. Open a Pull Request (PR) to merge your branch into `main`.
-
-5. Wait for review and approval before merging.
-
-### Rules
-
-* Do not push directly to `main`.
-* Keep commits small and focused.
-* Use meaningful branch names and commit messages.
-* Be respectful during code reviews.
+If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
