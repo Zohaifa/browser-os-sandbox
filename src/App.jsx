@@ -1,5 +1,6 @@
 import { useEffect, useMemo, useRef, useState } from 'react'
 import ContextMenu from './components/ContextMenu'
+import CalculatorApp from './components/CalculatorApp'
 import DesktopDirectory from './components/DesktopDirectory'
 import FolderContents from './components/FolderContents'
 import Window from './components/Window'
@@ -8,49 +9,49 @@ const initialFileSystem = {
   id: 'root',
   name: 'Desktop',
   type: 'folder',
-  children: [
-    {
-      id: 'projects',
-      name: 'Projects',
-      type: 'folder',
-      children: [
-        {
-          id: 'browser-os',
-          name: 'Browser OS',
-          type: 'folder',
-          children: [
-            { id: 'roadmap', name: 'roadmap.md', type: 'file', extension: 'MD' },
-            { id: 'notes', name: 'notes.txt', type: 'file', extension: 'TXT' },
-          ],
-        },
-        { id: 'ideas', name: 'ideas.doc', type: 'file', extension: 'DOC' },
-      ],
-    },
-    {
-      id: 'media',
-      name: 'Media',
-      type: 'folder',
-      children: [
-        { id: 'wallpaper', name: 'wallpaper.jpg', type: 'file', extension: 'JPG' },
-        { id: 'audio', name: 'startup.wav', type: 'file', extension: 'WAV' },
-      ],
-    },
-    {
-      id: 'documents',
-      name: 'Documents',
-      type: 'folder',
-      children: [
-        {
-          id: 'work',
-          name: 'Work',
-          type: 'folder',
-          children: [
-            { id: 'report', name: 'report.pdf', type: 'file', extension: 'PDF' },
-          ],
-        },
-      ],
-    },
-  ],
+   children: [
+  //   {
+  //     id: 'projects',
+  //     name: 'Projects',
+  //     type: 'folder',
+  //     children: [
+  //       {
+  //         id: 'browser-os',
+  //         name: 'Browser OS',
+  //         type: 'folder',
+  //         children: [
+  //           { id: 'roadmap', name: 'roadmap.md', type: 'file', extension: 'MD' },
+  //           { id: 'notes', name: 'notes.txt', type: 'file', extension: 'TXT' },
+  //         ],
+  //       },
+  //       { id: 'ideas', name: 'ideas.doc', type: 'file', extension: 'DOC' },
+  //     ],
+  //   },
+  //   {
+  //     id: 'media',
+  //     name: 'Media',
+  //     type: 'folder',
+  //     children: [
+  //       { id: 'wallpaper', name: 'wallpaper.jpg', type: 'file', extension: 'JPG' },
+  //       { id: 'audio', name: 'startup.wav', type: 'file', extension: 'WAV' },
+  //     ],
+  //   },
+  //   {
+  //     id: 'documents',
+  //     name: 'Documents',
+  //     type: 'folder',
+  //     children: [
+  //       {
+  //         id: 'work',
+  //         name: 'Work',
+  //         type: 'folder',
+  //         children: [
+  //           { id: 'report', name: 'report.pdf', type: 'file', extension: 'PDF' },
+  //         ],
+  //       },
+  //     ],
+  //   },
+   ],
 }
 
 function App() {
@@ -168,6 +169,32 @@ function App() {
         y: 46 + offset,
       },
       body: 'This is a dummy XP-style window for testing drag, focus, and close behavior.',
+    }
+
+    setWindows((prev) => [...prev, nextWindow])
+    setWindowOrder((prev) => [...prev, id])
+  }
+
+  const openCalculatorWindow = () => {
+    const existingWindow = windows.find((windowItem) => windowItem.kind === 'calculator')
+
+    if (existingWindow) {
+      setWindowOrder((prev) => {
+        const withoutTarget = prev.filter((item) => item !== existingWindow.id)
+        return [...withoutTarget, existingWindow.id]
+      })
+      return
+    }
+
+    const id = `calculator-window-${Date.now()}`
+    const nextWindow = {
+      id,
+      kind: 'calculator',
+      title: 'Calculator',
+      initialPosition: {
+        x: 360,
+        y: 84,
+      },
     }
 
     setWindows((prev) => [...prev, nextWindow])
@@ -374,12 +401,25 @@ function App() {
           }}
         />
 
-        {windows.length === 0 && (
+        <section className="absolute right-3 top-3 z-20">
+          <button
+            type="button"
+            onClick={openCalculatorWindow}
+            className="xp-app-shortcut flex w-20 flex-col items-center gap-1 rounded p-1 text-center"
+          >
+            <span className="xp-calculator-icon" aria-hidden="true" />
+            <span className="text-[11px] leading-tight text-white [text-shadow:1px_1px_1px_rgba(0,0,0,0.7)]">
+              Calculator
+            </span>
+          </button>
+        </section>
+
+        {/* >{windows.length === 0 && (
           <div className="pointer-events-none absolute left-6 top-8 w-[min(34rem,92vw)] rounded-md border border-sky-100/40 bg-white/20 px-4 py-3 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_6px_18px_rgba(0,0,0,0.35)] backdrop-blur-[1px]">
             <p className="text-xs tracking-wide">Windows XP Sandbox</p>
             <p className="mt-1 text-sm">Click a folder icon to open it in a window.</p>
-          </div>
-        )}
+          </div
+        )} */}
 
         {windows.map((windowItem) => (
           <Window
@@ -421,6 +461,8 @@ function App() {
                   onDeleteItem={deleteItem}
                 />
               </>
+            ) : windowItem.kind === 'calculator' ? (
+              <CalculatorApp />
             ) : (
               <p className="text-[13px] leading-relaxed text-slate-700">{windowItem.body}</p>
             )}
