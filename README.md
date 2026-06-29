@@ -1,16 +1,57 @@
-# React + Vite
+# Browser OS Sandbox
 
-This template provides a minimal setup to get React working in Vite with HMR and some Oxlint rules.
+A web-based simulated desktop operating system environment built with React. This project demonstrates core OS concepts such as CPU scheduling, virtual memory management, and file systems, wrapped in a classic, interactive windowed graphical user interface reminiscent of Windows XP.
 
-Currently, two official plugins are available:
+## Features
 
-- [@vitejs/plugin-react](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react) uses [Oxc](https://oxc.rs)
-- [@vitejs/plugin-react-swc](https://github.com/vitejs/vite-plugin-react/blob/main/packages/plugin-react-swc) uses [SWC](https://swc.rs/)
+### Virtual Desktop Interface
+- **Window Management**: Fully draggable and resizable application windows with maximize/minimize functionality.
+- **Draggable Desktop**: Icons and files on the desktop can be freely dragged, arranged, and placed via an underlying coordinate system.
+- **Taskbar & Start Menu**: Classic UI elements for launching applications and managing running processes.
 
-## React Compiler
+### CPU Scheduling Simulator
+- Supports multiple CPU scheduling algorithms to process simulated workloads:
+  - **FCFS** (First Come, First Serve)
+  - **RR** (Round Robin)
+  - **SJF** (Shortest Job First)
+  - **SRTF** (Shortest Remaining Time First - Preemptive)
+- Processes have defined "burst times" and execute in real-time on a virtual clock.
 
-The React Compiler is not enabled on this template because of its impact on dev & build performances. To add it, see [this documentation](https://react.dev/learn/react-compiler/installation).
+### Memory Management & Swapping
+- Simulates a **400MB RAM** capacity limit.
+- **Dynamic Swapping**: If a newly launched process requires more memory than is currently available, the OS triggers a *Page Fault* and automatically swaps out older or paused processes to a virtual Disk to make room, using an LRU (Least Recently Used) approach.
+- Processes swapped to disk wait in a suspended state until memory frees up and they are paged back in.
 
-## Expanding the Oxlint configuration
+### Virtual File System (VFS)
+- A fully nested, hierarchical file system supporting folders, text files, and media files.
+- **Recycle Bin**: Safely delete files and restore them later, just like a native OS.
+- **Persistence**: File structures, icon positions, and saved text files are saved to your browser's `localStorage` to survive page reloads.
 
-If you are developing a production application, we recommend using TypeScript with type-aware lint rules enabled. Check out the [TS template](https://github.com/vitejs/vite/tree/main/packages/create-vite/template-react-ts) for information on how to integrate TypeScript and Oxlint's TypeScript related rules in your project.
+### Simulated Applications
+- **Task Manager**: Monitor CPU queues, view memory usage bars, see exactly which processes are in RAM versus Swapped to Disk, and force-terminate tasks.
+- **Notepad**: A fully functional text editor for creating and modifying `.txt` files within the VFS.
+- **Media Player**: Simulates audio and video playback while the CPU scheduler manages its processing time.
+- **Banker's Algorithm / Deadlock Control**: Interactive simulator demonstrating resource allocation and deadlock avoidance.
+- **Calculator**: A basic standard calculator utility.
+
+## Tech Stack
+- **Frontend Framework**: React 18
+- **Build Tool**: Vite
+- **Styling**: TailwindCSS & Vanilla CSS Variables
+- **Icons**: Lucide-React
+
+## How to Run Locally
+
+1. Clone the repository and navigate into the project directory:
+   ```bash
+   cd browser-os-sandbox
+   ```
+2. Install the dependencies:
+   ```bash
+   npm install
+   ```
+3. Start the development server:
+   ```bash
+   npm run dev
+   ```
+4. Open the provided localhost URL in your browser to boot up the OS!

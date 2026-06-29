@@ -13,7 +13,9 @@ import DiskSchedulerApp from './components/DiskSchedulerApp'
 import BankersAlgorithmApp from './components/BankersAlgorithmApp'
 import TaskManagerApp from './components/TaskManagerApp'
 import MediaPlayerApp from './components/MediaPlayerApp'
+import NotepadApp from './components/NotepadApp'
 import useScheduler from './hooks/useScheduler'
+import usePersistentState from './hooks/usePersistentState'
 
 // ─── Initial VFS ─────────────────────────────────────────────────────────────
 const initialFileSystem = {
@@ -23,6 +25,8 @@ const initialFileSystem = {
   children: [
     { id: 'file-sample-video', name: 'sample_video.mp4', type: 'file', extension: 'MP4', mediaType: 'video', blobUrl: null, burstTime: 12 },
     { id: 'file-sample-audio', name: 'sample_audio.mp3', type: 'file', extension: 'MP3', mediaType: 'audio', blobUrl: null, burstTime: 8 },
+    { id: 'file-readme', name: 'readme.txt', type: 'file', extension: 'TXT', mediaType: 'text', content: 'Welcome to Browser OS Sandbox!\n\nThis is a simulation of an OS desktop environment.\nYou can drag windows, run processes, and manage memory.' },
+    { id: 'recycle-bin', name: 'Recycle Bin', type: 'folder', isSystem: true, children: [] },
   ],
 }
 
@@ -35,7 +39,7 @@ export default function App() {
   const importRef = useRef(null)
 
   // ── File System ──────────────────────────────────────────────────────────
-  const [fileSystem, setFileSystem] = useState(initialFileSystem)
+  const [fileSystem, setFileSystem] = usePersistentState('xp-vfs', initialFileSystem)
 
   const updateNode = (tree, id, fn) => {
     if (tree.id === id) return fn(tree)
@@ -54,10 +58,66 @@ export default function App() {
     return changed ? { ...tree, children: next } : tree
   }
 
+  const updateItem = useCallback((id, updates) => {
+    setFileSystem(prev => updateNode(prev, id, node => ({ ...node, ...updates })))
+  }, [])
+
+  const findNode = (tree, id) => {
+    if (tree.id === id) return tree
+    if (!tree.children) return null
+    for (const c of tree.children) {
+      const res = findNode(c, id)
+      if (res) return res
+    }
+    return null
+  }
+
   const collectFolderIds = (node) => {
     if (!node || node.type !== 'folder') return []
     return [node.id, ...(node.children || []).flatMap(c => c.type === 'folder' ? collectFolderIds(c) : [])]
   }
+
+  const deleteItem = useCallback((id) => {
+    let deadFolders = []
+    setFileSystem(prev => {
+      const nodeToMove = findNode(prev, id)
+      if (!nodeToMove) return prev
+      deadFolders = nodeToMove.type === 'folder' ? collectFolderIds(nodeToMove) : []
+      
+      // If already in recycle bin, permanent delete
+      const isAlreadyInBin = prev.children.find(c => c.id === 'recycle-bin')?.children?.find(c => c.id === id)
+      if (isAlreadyInBin) {
+        return removeNode(prev, id)
+      }
+
+      // Otherwise move to recycle bin
+      let next = removeNode(prev, id)
+      return updateNode(next, 'recycle-bin', bin => ({
+        ...bin,
+        children: [...(bin.children || []), { ...nodeToMove, originalParentId: 'root' }]
+      }))
+    })
+    setWindows(prev => {
+      if (!deadFolders.length) return prev
+      return prev.filter(w => !(w.kind === 'folder' && deadFolders.includes(w.folderId)))
+    })
+  }, [])
+
+  const emptyRecycleBin = useCallback(() => {
+    setFileSystem(prev => updateNode(prev, 'recycle-bin', bin => ({ ...bin, children: [] })))
+  }, [])
+
+  const restoreItem = useCallback((id) => {
+    setFileSystem(prev => {
+      const nodeToMove = findNode(prev, id)
+      if (!nodeToMove) return prev
+      let next = removeNode(prev, id)
+      return updateNode(next, nodeToMove.originalParentId || 'root', parent => ({
+        ...parent,
+        children: [...(parent.children || []), nodeToMove]
+      }))
+    })
+  }, [])
 
   const folderMap = useMemo(() => {
     const byId = new Map(), itemById = new Map()
@@ -110,6 +170,18 @@ export default function App() {
     })
   }, [windows])
 
+  // System startup sound on first interaction
+  useEffect(() => {
+    const playStartupSound = () => {
+      const audio = new Audio('https://dl.vgmdownloads.com/soundtracks/windows-xp/oytntjks/03.%20Windows%20XP%20Startup.mp3')
+      audio.volume = 0.3
+      audio.play().catch(e => console.log('Audio blocked', e))
+      document.removeEventListener('pointerdown', playStartupSound)
+    }
+    document.addEventListener('pointerdown', playStartupSound)
+    return () => document.removeEventListener('pointerdown', playStartupSound)
+  }, [])
+
   // Open an app window (singleton per kind)
   const openAppWindow = useCallback((kind, title, ix = 120, iy = 80) => {
     setIsStartOpen(false)
@@ -130,6 +202,14 @@ export default function App() {
       if (o.includes(id)) return o
       return [...o, id]
     })
+  }, [setWindows])
+
+  // Open a document window (allows multiples)
+  const openDocumentWindow = useCallback((file, ix = 140, iy = 100) => {
+    setIsStartOpen(false)
+    const id = `doc-${file.id}-${++_wSerial}`
+    setWindows(prev => [...prev, { id, kind: 'notepad', title: `Notepad - ${file.name}`, fileId: file.id, initialPosition: { x: ix, y: iy } }])
+    setWindowOrder(o => [...o, id])
   }, [setWindows])
 
   // Open a folder window
@@ -215,12 +295,23 @@ export default function App() {
 
   // Handle double-click on media file: prompt burst time, create PCB
   const handleOpenFile = useCallback((file) => {
+    if (file.extension === 'TXT') {
+      openDocumentWindow(file)
+      return
+    }
+
     const raw = window.prompt(`Set burst time (seconds) for "${file.name}":`, String(file.burstTime || 10))
     if (raw === null) return
     const bt = parseInt(raw, 10)
     if (isNaN(bt) || bt <= 0) { window.alert('Please enter a positive number.'); return }
-    scheduler.addProcess({ ...file, burstTime: bt })
-  }, [scheduler])
+    
+    const memRaw = window.prompt(`Set memory requirement (MB) for "${file.name}" (Max ${scheduler.ramSize}MB):`, String(file.memoryReq || 20))
+    if (memRaw === null) return
+    const memReq = parseInt(memRaw, 10)
+    if (isNaN(memReq) || memReq <= 0) { window.alert('Please enter a positive number.'); return }
+
+    scheduler.addProcess({ ...file, burstTime: bt, memoryReq: memReq })
+  }, [scheduler, openDocumentWindow])
 
   // Handle End Task from Task Manager
   const handleTerminate = useCallback((pid) => {
@@ -290,17 +381,6 @@ export default function App() {
     const clean = name.trim()
     setFileSystem(prev => updateNode(prev, itemId, n => ({ ...n, name: clean, extension: n.type === 'file' ? (clean.includes('.') ? clean.split('.').pop().toUpperCase() : n.extension) : n.extension })))
   }
-
-  const deleteItem = (itemId) => {
-    const item = folderMap.itemById.get(itemId)
-    if (!item || !window.confirm(`Delete "${item.name}"?`)) return
-    const deadFolders = item.type === 'folder' ? collectFolderIds(item) : []
-    setFileSystem(prev => removeNode(prev, itemId))
-    if (deadFolders.length) {
-      setWindows(prev => prev.filter(w => !(w.kind === 'folder' && deadFolders.includes(w.folderId))))
-    }
-  }
-
   // ── Import Media ─────────────────────────────────────────────────────────
   const handleImport = (e) => {
     Array.from(e.target.files || []).forEach(file => {
@@ -324,7 +404,7 @@ export default function App() {
   const SHORTCUTS = [
     { kind: 'task-manager',   title: 'Task Manager',          icon: <Activity size={20} />, label: 'Task\nManager', x: 60,  y: 60  },
     { kind: 'memory-manager', title: 'Memory Manager',        icon: <Cpu size={20} />,      label: 'Memory\nManager', x: 100, y: 100 },
-    { kind: 'disk-scheduler', title: 'Disk Defragmenter',     icon: <HardDrive size={20} />, label: 'Disk\nDefrag', x: 150, y: 120 },
+    // { kind: 'disk-scheduler', title: 'Disk Defragmenter',     icon: <HardDrive size={20} />, label: 'Disk\nDefrag', x: 150, y: 120 },
     { kind: 'bankers-app',    title: 'Deadlock Control',      icon: <ShieldAlert size={20} />, label: 'Deadlock\nCMD', x: 200, y: 80  },
     { kind: 'calculator',     title: 'Calculator',            icon: <Calculator size={20} />, label: 'Calculator', x: 360, y: 84  },
   ]
@@ -332,7 +412,7 @@ export default function App() {
   // Start Menu programs list (all apps)
   const START_APPS = [
     { kind: 'memory-manager', title: 'Memory Manager',    sub: 'Page Replacement Simulator', icon: <Cpu size={22} />,        x: 100, y: 80  },
-    { kind: 'disk-scheduler', title: 'Disk Defragmenter', sub: 'Scheduling Visualizer',       icon: <HardDrive size={22} />,  x: 150, y: 100 },
+    // { kind: 'disk-scheduler', title: 'Disk Defragmenter', sub: 'Scheduling Visualizer',       icon: <HardDrive size={22} />,  x: 150, y: 100 },
     { kind: 'bankers-app',    title: "Deadlock Control",  sub: "Banker's Algorithm",          icon: <ShieldAlert size={22} />, x: 200, y: 80  },
     { kind: 'task-manager',   title: 'Task Manager',      sub: 'CPU Scheduler',               icon: <Activity size={22} />,   x: 60,  y: 60  },
     { kind: 'calculator',     title: 'Calculator',        sub: 'Standard Calculator',         icon: <Calculator size={22} />, x: 360, y: 84  },
@@ -369,7 +449,8 @@ export default function App() {
           rootFolder={fileSystem}
           onOpenFolder={openFolderWindow}
           onOpenFile={handleOpenFile}
-          onShortcutContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, parentFolderId: 'root' }) }}
+          onShortcutContextMenu={(e, id) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, itemId: id, parentFolderId: 'root' }) }}
+          onUpdateItem={updateItem}
         />
 
         {/* App shortcuts (right side) */}
@@ -409,7 +490,7 @@ export default function App() {
               onFocus={focusWindow}
             >
               {w.kind === 'folder' ? (
-                <FolderContents folder={folderMap.byId.get(w.folderId)} onOpenFolder={openFolderWindow} onOpenFile={handleOpenFile} onRenameItem={renameItem} onDeleteItem={deleteItem} />
+                <FolderContents folder={folderMap.byId.get(w.folderId)} onOpenFolder={openFolderWindow} onOpenFile={handleOpenFile} onRenameItem={renameItem} onDeleteItem={deleteItem} onRestoreItem={restoreItem} />
               ) : w.kind === 'calculator' ? (
                 <CalculatorApp />
               ) : w.kind === 'memory-manager' ? (
@@ -426,6 +507,13 @@ export default function App() {
                   metrics={scheduler.metrics}
                   runningProcess={scheduler.runningProcess}
                   onTerminate={handleTerminate}
+                  ramSize={scheduler.ramSize}
+                  usedRam={scheduler.usedRam}
+                />
+              ) : w.kind === 'notepad' ? (
+                <NotepadApp 
+                  file={findNode(fileSystem, w.fileId)} 
+                  onSave={(id, content) => updateItem(id, { content })}
                 />
               ) : w.kind === 'media' ? (
                 <MediaPlayerApp
@@ -547,7 +635,7 @@ export default function App() {
       )}
 
       {/* ── Taskbar ── */}
-      <footer className="xp-taskbar relative z-50 flex h-[42px] items-center justify-between pr-1.5">
+      <footer className="xp-taskbar relative z-50 flex h-[42px] items-center justify-between">
         {/* Start Button */}
         <button
           type="button"
@@ -582,44 +670,67 @@ export default function App() {
           ))}
         </div>
 
-        {/* Scheduler controls */}
-        <div className="flex items-center gap-1.5 px-1.5 border-l border-[#89b9ff]/50 h-full py-1.5">
-          <select
-            value={scheduler.algorithm}
-            onChange={e => scheduler.setAlgorithm(e.target.value)}
-            className="text-[10px] bg-[#1a4ba5] text-white border border-[#89b9ff] px-1 py-0.5 h-full rounded-none"
-          >
-            <option value="fcfs">FCFS</option>
-            <option value="rr">Round Robin</option>
-          </select>
-          {scheduler.algorithm === 'rr' && (
-            <div className="flex items-center gap-0.5 text-[10px] text-white">
-              <span>Q=</span>
-              <input
-                type="number" min={1} max={10}
-                value={scheduler.rrQuantum}
-                onChange={e => scheduler.setRrQuantum(Number(e.target.value))}
-                className="w-8 bg-[#1a4ba5] text-white border border-[#89b9ff] text-center px-0.5"
-              />
-            </div>
-          )}
-          <button onClick={handleReset} title="Reset Scheduler" className="text-white hover:text-yellow-300">
-            <RotateCcw size={13} />
-          </button>
-        </div>
-
-        {/* Import Media */}
-        <button
-          onClick={() => importRef.current?.click()}
-          className="flex items-center gap-1 text-[10px] text-white border border-[#89b9ff] px-2 py-0.5 hover:brightness-110 bg-[#1a4ba5] mx-1"
+        {/* ── System Tray (Notification Area) ── */}
+        <div
+          className="flex items-center h-full pl-3 pr-3 gap-3 ml-2 border-l border-[#092e9e]"
+          style={{
+            background: 'linear-gradient(to bottom, #1290e9 0%, #19b9f3 9%, #1290e9 18%, #0e65d9 92%, #0831d9 100%)',
+            boxShadow: 'inset 1px 0 0 #3eb4f9',
+          }}
         >
-          <Upload size={11} /> Import
-        </button>
-        <input ref={importRef} type="file" accept=".mp4,.mp3,.webm,.ogg,.wav" multiple className="hidden" onChange={handleImport} />
+          {/* Scheduler controls */}
+          <div className="flex items-center gap-1.5 h-full">
+            <select
+              title="Scheduler Algorithm"
+              value={scheduler.algorithm}
+              onChange={e => scheduler.setAlgorithm(e.target.value)}
+              className="text-[10px] bg-white/10 text-white border border-white/20 px-1 py-0.5 rounded-sm outline-none cursor-pointer hover:bg-white/20"
+              style={{ textShadow: '1px 1px 1px rgba(0,0,0,0.5)' }}
+            >
+              <option value="fcfs" className="text-black">FCFS</option>
+              <option value="rr" className="text-black">Round Robin</option>
+              <option value="sjf" className="text-black">SJF (Shortest Job)</option>
+              <option value="srtf" className="text-black">SRTF (Shortest Remaining)</option>
+            </select>
+            
+            {scheduler.algorithm === 'rr' && (
+              <div className="flex items-center gap-0.5 text-[10px] text-white" style={{ textShadow: '1px 1px 1px rgba(0,0,0,0.5)' }}>
+                <span>Q=</span>
+                <input
+                  type="number" min={1} max={10}
+                  value={scheduler.rrQuantum}
+                  onChange={e => scheduler.setRrQuantum(Number(e.target.value))}
+                  className="w-7 bg-white/10 text-white border border-white/20 text-center px-0.5 rounded-sm outline-none font-mono"
+                />
+              </div>
+            )}
+            
+            <button 
+              onClick={handleReset} 
+              title="Reset Scheduler" 
+              className="text-white/80 hover:text-white drop-shadow-md ml-0.5"
+            >
+              <RotateCcw size={14} />
+            </button>
+          </div>
 
-        {/* Clock */}
-        <div className="xp-clock px-3 py-1 text-[11px] text-white/95 flex items-center h-[28px] mr-1">
-          {clockStr}
+          {/* Divider */}
+          <div className="h-4 w-px bg-white/30" />
+
+          {/* Import Media */}
+          <button
+            onClick={() => importRef.current?.click()}
+            title="Import Media Files"
+            className="text-white/80 hover:text-white drop-shadow-md"
+          >
+            <Upload size={14} />
+          </button>
+          <input ref={importRef} type="file" accept=".mp4,.mp3,.webm,.ogg,.wav" multiple className="hidden" onChange={handleImport} />
+
+          {/* Clock */}
+          <div className="text-[11px] text-white ml-1 font-normal cursor-default" style={{ textShadow: '1px 1px 1px rgba(0,0,0,0.8)' }}>
+            {clockStr}
+          </div>
         </div>
       </footer>
     </div>

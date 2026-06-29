@@ -8,8 +8,9 @@ function ItemIcon({ item }) {
   return <File size={16} className="text-gray-500 shrink-0" />
 }
 
-function FolderContents({ folder, onOpenFolder, onOpenFile, onRenameItem, onDeleteItem }) {
+function FolderContents({ folder, onOpenFolder, onOpenFile, onRenameItem, onDeleteItem, onRestoreItem }) {
   const children = folder?.children || []
+  const isRecycleBin = folder?.id === 'recycle-bin'
 
   if (children.length === 0) {
     return <p className="text-xs text-slate-500 italic">This folder is empty.</p>
@@ -36,13 +37,22 @@ function FolderContents({ folder, onOpenFolder, onOpenFile, onRenameItem, onDele
           </button>
 
           <div className="hidden group-hover:flex items-center gap-1 shrink-0">
-            {onRenameItem && (
+            {onRenameItem && !isRecycleBin && (
               <button
                 type="button"
                 className="rounded border border-[#9db6d3] bg-[#e6eef9] px-1.5 py-0.5 text-[10px] text-slate-700 hover:bg-[#d9e8fb]"
                 onClick={() => onRenameItem(item.id)}
               >
                 Rename
+              </button>
+            )}
+            {onRestoreItem && isRecycleBin && (
+              <button
+                type="button"
+                className="rounded border border-[#9db6d3] bg-[#e6eef9] px-1.5 py-0.5 text-[10px] text-slate-700 hover:bg-[#d9e8fb]"
+                onClick={() => onRestoreItem(item.id)}
+              >
+                Restore
               </button>
             )}
             {onDeleteItem && (

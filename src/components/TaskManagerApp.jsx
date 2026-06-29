@@ -69,7 +69,8 @@ const STATE_STYLE = {
   Completed: 'bg-[#70ad47] text-white',
 }
 
-export default function TaskManagerApp({ allProcesses, ganttLog, virtualClock, metrics, runningProcess, onTerminate }) {
+export default function TaskManagerApp({ allProcesses, ganttLog, virtualClock, metrics, runningProcess, onTerminate, ramSize, usedRam }) {
+  const ramPercent = Math.min(100, (usedRam / ramSize) * 100).toFixed(1)
   return (
     <div className="w-[560px] text-[12px] text-black font-[Tahoma,Verdana,sans-serif] flex flex-col gap-2 p-1">
 
@@ -83,7 +84,13 @@ export default function TaskManagerApp({ allProcesses, ganttLog, virtualClock, m
           {runningProcess ? `P${runningProcess.pid} — ${runningProcess.name}` : 'Idle'}
         </span>
         <span className="mx-2 text-gray-400">|</span>
-        <span className="text-gray-600">{allProcesses.filter(p => p.state !== 'Completed').length} active</span>
+        <div className="flex items-center gap-1">
+          <span className="font-bold text-[#0a246a]">RAM:</span>
+          <div className="w-20 h-3 bg-gray-200 border border-gray-400 relative">
+            <div className={`h-full ${ramPercent > 90 ? 'bg-red-500' : 'bg-green-500'} transition-all`} style={{ width: `${ramPercent}%` }} />
+          </div>
+          <span className="text-[10px] font-mono">{usedRam}/{ramSize} MB</span>
+        </div>
       </div>
 
       {/* Process Table */}
@@ -94,6 +101,7 @@ export default function TaskManagerApp({ allProcesses, ganttLog, virtualClock, m
               <th className="px-2 py-1 border-r border-[#c0bdb5] font-bold">PID</th>
               <th className="px-2 py-1 border-r border-[#c0bdb5] font-bold">Process Name</th>
               <th className="px-2 py-1 border-r border-[#c0bdb5] font-bold">State</th>
+              <th className="px-2 py-1 border-r border-[#c0bdb5] font-bold">RAM</th>
               <th className="px-2 py-1 border-r border-[#c0bdb5] font-bold">Burst</th>
               <th className="px-2 py-1 border-r border-[#c0bdb5] font-bold">Remaining</th>
               <th className="px-2 py-1 border-r border-[#c0bdb5] font-bold">Wait</th>
@@ -120,6 +128,13 @@ export default function TaskManagerApp({ allProcesses, ganttLog, virtualClock, m
                     <span className={`px-1.5 py-0.5 text-[10px] font-bold rounded-sm ${STATE_STYLE[p.state] || 'bg-gray-300'}`}>
                       {p.state}
                     </span>
+                  </td>
+                  <td className="px-2 py-1 border-r border-[#e0ddd5] font-mono text-center">
+                    {p.state !== 'Completed' && p.state !== 'Failed (OOM)' ? (
+                      <span className={p.inMemory ? 'text-green-700 font-bold' : 'text-red-600 font-bold'} title={p.inMemory ? 'In Memory' : 'Swapped to Disk'}>
+                        {p.memoryReq}M {p.inMemory ? '✓' : '✗'}
+                      </span>
+                    ) : '-'}
                   </td>
                   <td className="px-2 py-1 border-r border-[#e0ddd5] font-mono">{p.burstTime}s</td>
                   <td className="px-2 py-1 border-r border-[#e0ddd5]">
