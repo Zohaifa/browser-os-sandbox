@@ -115,12 +115,21 @@ export default function App() {
     setIsStartOpen(false)
     const existing = windowsRef.current.find(w => w.kind === kind)
     if (existing) {
-      setWindowOrder(o => [...o.filter(i => i !== existing.id), existing.id])
+      setWindowOrder(o => {
+        if (o[o.length - 1] === existing.id) return o
+        return [...o.filter(i => i !== existing.id), existing.id]
+      })
       return
     }
     const id = `${kind}-${++_wSerial}`
-    setWindows(prev => [...prev, { id, kind, title, initialPosition: { x: ix, y: iy } }])
-    setWindowOrder(o => [...o, id])
+    setWindows(prev => {
+      if (prev.find(w => w.kind === kind)) return prev
+      return [...prev, { id, kind, title, initialPosition: { x: ix, y: iy } }]
+    })
+    setWindowOrder(o => {
+      if (o.includes(id)) return o
+      return [...o, id]
+    })
   }, [setWindows])
 
   // Open a folder window
@@ -130,13 +139,22 @@ export default function App() {
     if (!folder) return
     const existing = windowsRef.current.find(w => w.kind === 'folder' && w.folderId === folderId)
     if (existing) {
-      setWindowOrder(o => [...o.filter(i => i !== existing.id), existing.id])
+      setWindowOrder(o => {
+        if (o[o.length - 1] === existing.id) return o
+        return [...o.filter(i => i !== existing.id), existing.id]
+      })
       return
     }
     const id = `folder-${folderId}-${++_wSerial}`
-    const offset = windowsRef.current.length * 22
-    setWindows(prev => [...prev, { id, kind: 'folder', folderId, title: folder.name, initialPosition: { x: 80 + offset, y: 60 + offset } }])
-    setWindowOrder(o => [...o, id])
+    setWindows(prev => {
+      if (prev.find(w => w.kind === 'folder' && w.folderId === folderId)) return prev
+      const offset = prev.length * 22
+      return [...prev, { id, kind: 'folder', folderId, title: folder.name, initialPosition: { x: 80 + offset, y: 60 + offset } }]
+    })
+    setWindowOrder(o => {
+      if (o.includes(id)) return o
+      return [...o, id]
+    })
   }, [folderMap, setWindows])
 
   // Remove windows for deleted folders
@@ -172,14 +190,22 @@ export default function App() {
   const openMediaWindow = useCallback((process) => {
     if (closedMediaPids.current.has(process.pid)) return
     const id = `media-${process.pid}`
-    const existing = windowsRef.current.find(w => w.id === id)
-    if (existing) return
+    if (windowsRef.current.find(w => w.id === id)) return
+    
     if (!mediaPlayerRefs.current[process.pid]) {
       mediaPlayerRefs.current[process.pid] = { current: null }
     }
-    const offset = windowsRef.current.length * 20
-    setWindows(prev => [...prev, { id, kind: 'media', pid: process.pid, title: `P${process.pid}: ${process.name}`, initialPosition: { x: 180 + offset, y: 80 + offset } }])
-    setWindowOrder(o => [...o, id])
+    
+    setWindows(prev => {
+      if (prev.find(w => w.id === id)) return prev
+      const offset = prev.length * 20
+      return [...prev, { id, kind: 'media', pid: process.pid, title: `P${process.pid}: ${process.name}`, initialPosition: { x: 180 + offset, y: 80 + offset } }]
+    })
+    
+    setWindowOrder(o => {
+      if (o.includes(id)) return o
+      return [...o, id]
+    })
   }, [setWindows])
 
   // Auto-open media windows for new processes

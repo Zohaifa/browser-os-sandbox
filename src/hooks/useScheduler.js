@@ -69,92 +69,51 @@ export default function useScheduler() {
       const alg = algorithmRef.current
       const quantum = rrQuantumRef.current
 
-      // Assemble all live processes
-      let live = [
-        ...(runningRef.current ? [{ ...runningRef.current }] : []),
-        ...queueRef.current.map(p => ({ ...p })),
-      ]
+      // Increment waiting time for all in queue
+      queueRef.current = queueRef.current.map(p => ({ ...p, waitingTime: p.waitingTime + 1 }))
 
-      if (live.length === 0) {
-        activeRef.current = false
-        rerender()
-        return
-      }
+      let current = runningRef.current ? { ...runningRef.current } : null
 
-      // Increment waiting time for all non-running processes
-      live = live.map(p => p.state === 'Running' ? p : { ...p, waitingTime: p.waitingTime + 1 })
-
-      let nextRunning = null
-      let nextQueue = []
-      const newlyCompleted = []
-
-      // ─── FCFS ─────────────────────────────────────────────────────────
       if (alg === 'fcfs') {
-        const sorted = [...live].sort((a, b) => a.arrivalTime - b.arrivalTime)
-        const sel = sorted[0]
-        const updated = {
-          ...sel,
-          state: 'Running',
-          startTime: sel.startTime ?? clockRef.current,
-          remainingTime: sel.remainingTime - 1,
+        if (!current && queueRef.current.length > 0) {
+          queueRef.current.sort((a, b) => a.arrivalTime - b.arrivalTime)
+          current = queueRef.current.shift()
+          current.startTime = current.startTime ?? clockRef.current
+          current.state = 'Running'
         }
-        ganttRef.current.push({ pid: sel.pid, name: sel.name, color: sel.color })
-
-        if (updated.remainingTime <= 0) {
-          newlyCompleted.push({ ...updated, state: 'Completed', completionTime: clockRef.current })
-        } else {
-          nextRunning = { ...updated, state: 'Running' }
-        }
-        nextQueue = sorted.slice(1).map(p => ({ ...p, state: 'Ready' }))
-
-      // ─── Round Robin ──────────────────────────────────────────────────
       } else {
-        const current = live.find(p => p.state === 'Running')
-        const others = live.filter(p => p.state !== 'Running')
-
-        let sel, preempt = false
-
+        // Round Robin
         if (current) {
           rrCounterRef.current += 1
-          if (rrCounterRef.current >= quantum && others.length > 0) {
-            preempt = true
+          if (rrCounterRef.current >= quantum && queueRef.current.length > 0) {
+            queueRef.current.push({ ...current, state: 'Paused' })
+            current = queueRef.current.shift()
+            current.startTime = current.startTime ?? clockRef.current
+            current.state = 'Running'
             rrCounterRef.current = 0
-            sel = others[0]
-          } else {
-            sel = current
           }
-        } else {
+        } else if (queueRef.current.length > 0) {
+          current = queueRef.current.shift()
+          current.startTime = current.startTime ?? clockRef.current
+          current.state = 'Running'
           rrCounterRef.current = 0
-          sel = live[0]
-        }
-
-        const updated = {
-          ...sel,
-          state: 'Running',
-          startTime: sel.startTime ?? clockRef.current,
-          remainingTime: sel.remainingTime - 1,
-        }
-        ganttRef.current.push({ pid: sel.pid, name: sel.name, color: sel.color })
-
-        if (updated.remainingTime <= 0) {
-          newlyCompleted.push({ ...updated, state: 'Completed', completionTime: clockRef.current })
-          rrCounterRef.current = 0
-          nextQueue = others.map(p => ({ ...p, state: 'Ready' }))
-        } else {
-          nextRunning = { ...updated, state: 'Running' }
-          if (preempt && current) {
-            nextQueue = [...others.slice(1), { ...current, state: 'Paused' }]
-          } else {
-            nextQueue = others.map(p => ({ ...p, state: p.state === 'Running' ? 'Paused' : p.state }))
-          }
         }
       }
 
-      completedRef.current = [...completedRef.current, ...newlyCompleted]
-      runningRef.current = nextRunning
-      queueRef.current = nextQueue
+      if (current) {
+        current.remainingTime -= 1
+        ganttRef.current.push({ pid: current.pid, name: current.name, color: current.color })
 
-      if (!nextRunning && nextQueue.length === 0) {
+        if (current.remainingTime <= 0) {
+          completedRef.current.push({ ...current, state: 'Completed', completionTime: clockRef.current })
+          current = null
+          rrCounterRef.current = 0
+        }
+      }
+
+      runningRef.current = current
+
+      if (!current && queueRef.current.length === 0) {
         activeRef.current = false
       }
 
