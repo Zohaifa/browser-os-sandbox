@@ -72,7 +72,7 @@ function Window({
   return (
     <article
       ref={windowRef}
-      className="absolute w-[min(34rem,calc(100%-0.75rem))] rounded-sm border border-[#083178] bg-[#ece9d8] text-slate-900 shadow-[2px_2px_0_rgba(0,0,0,0.35),0_0_0_1px_rgba(255,255,255,0.25)]"
+      className="absolute w-fit max-w-[calc(100%-0.75rem)] rounded-sm border border-[#083178] bg-[#ece9d8] text-slate-900 shadow-[2px_2px_0_rgba(0,0,0,0.35),0_0_0_1px_rgba(255,255,255,0.25)]"
       style={{
         left: `${position.x}px`,
         top: `${position.y}px`,

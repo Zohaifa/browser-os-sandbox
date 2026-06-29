@@ -1,507 +1,601 @@
-import { useEffect, useMemo, useRef, useState } from 'react'
+import { useCallback, useEffect, useMemo, useRef, useState } from 'react'
+import {
+  Calculator, HardDrive, Cpu, ShieldAlert, FolderOpen,
+  Activity, Upload, RotateCcw, Film, Music, Folder, File,
+} from 'lucide-react'
 import ContextMenu from './components/ContextMenu'
 import CalculatorApp from './components/CalculatorApp'
 import DesktopDirectory from './components/DesktopDirectory'
 import FolderContents from './components/FolderContents'
 import Window from './components/Window'
+import MemoryManagerApp from './components/MemoryManagerApp'
+import DiskSchedulerApp from './components/DiskSchedulerApp'
+import BankersAlgorithmApp from './components/BankersAlgorithmApp'
+import TaskManagerApp from './components/TaskManagerApp'
+import MediaPlayerApp from './components/MediaPlayerApp'
+import useScheduler from './hooks/useScheduler'
 
+// ─── Initial VFS ─────────────────────────────────────────────────────────────
 const initialFileSystem = {
   id: 'root',
   name: 'Desktop',
   type: 'folder',
-   children: [
-  //   {
-  //     id: 'projects',
-  //     name: 'Projects',
-  //     type: 'folder',
-  //     children: [
-  //       {
-  //         id: 'browser-os',
-  //         name: 'Browser OS',
-  //         type: 'folder',
-  //         children: [
-  //           { id: 'roadmap', name: 'roadmap.md', type: 'file', extension: 'MD' },
-  //           { id: 'notes', name: 'notes.txt', type: 'file', extension: 'TXT' },
-  //         ],
-  //       },
-  //       { id: 'ideas', name: 'ideas.doc', type: 'file', extension: 'DOC' },
-  //     ],
-  //   },
-  //   {
-  //     id: 'media',
-  //     name: 'Media',
-  //     type: 'folder',
-  //     children: [
-  //       { id: 'wallpaper', name: 'wallpaper.jpg', type: 'file', extension: 'JPG' },
-  //       { id: 'audio', name: 'startup.wav', type: 'file', extension: 'WAV' },
-  //     ],
-  //   },
-  //   {
-  //     id: 'documents',
-  //     name: 'Documents',
-  //     type: 'folder',
-  //     children: [
-  //       {
-  //         id: 'work',
-  //         name: 'Work',
-  //         type: 'folder',
-  //         children: [
-  //           { id: 'report', name: 'report.pdf', type: 'file', extension: 'PDF' },
-  //         ],
-  //       },
-  //     ],
-  //   },
-   ],
+  children: [
+    { id: 'file-sample-video', name: 'sample_video.mp4', type: 'file', extension: 'MP4', mediaType: 'video', blobUrl: null, burstTime: 12 },
+    { id: 'file-sample-audio', name: 'sample_audio.mp3', type: 'file', extension: 'MP3', mediaType: 'audio', blobUrl: null, burstTime: 8 },
+  ],
 }
 
-function App() {
+let _wSerial = 0
+const mkId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 6)}`
+
+// ─── App ─────────────────────────────────────────────────────────────────────
+export default function App() {
   const desktopRef = useRef(null)
+  const importRef = useRef(null)
+
+  // ── File System ──────────────────────────────────────────────────────────
   const [fileSystem, setFileSystem] = useState(initialFileSystem)
-  const [windows, setWindows] = useState([])
-  const [windowOrder, setWindowOrder] = useState([])
-  const [contextMenu, setContextMenu] = useState(null)
 
-  const createId = (prefix) => `${prefix}-${Date.now()}-${Math.random().toString(36).slice(2, 7)}`
-
-  const updateNodeInTree = (tree, targetId, updater) => {
-    if (tree.id === targetId) {
-      return updater(tree)
-    }
-
-    if (!tree.children) {
-      return tree
-    }
-
+  const updateNode = (tree, id, fn) => {
+    if (tree.id === id) return fn(tree)
+    if (!tree.children) return tree
     let changed = false
-    const nextChildren = tree.children.map((child) => {
-      const updatedChild = updateNodeInTree(child, targetId, updater)
-      if (updatedChild !== child) {
-        changed = true
-      }
-      return updatedChild
-    })
-
-    return changed ? { ...tree, children: nextChildren } : tree
+    const next = tree.children.map(c => { const u = updateNode(c, id, fn); if (u !== c) changed = true; return u })
+    return changed ? { ...tree, children: next } : tree
   }
 
-  const removeNodeFromTree = (tree, targetId) => {
-    if (!tree.children) {
-      return tree
-    }
-
+  const removeNode = (tree, id) => {
+    if (!tree.children) return tree
     let changed = false
-    const nextChildren = tree.children
-      .filter((child) => {
-        const keep = child.id !== targetId
-        if (!keep) {
-          changed = true
-        }
-        return keep
-      })
-      .map((child) => {
-        const updatedChild = removeNodeFromTree(child, targetId)
-        if (updatedChild !== child) {
-          changed = true
-        }
-        return updatedChild
-      })
-
-    return changed ? { ...tree, children: nextChildren } : tree
+    const next = tree.children
+      .filter(c => { const k = c.id !== id; if (!k) changed = true; return k })
+      .map(c => { const u = removeNode(c, id); if (u !== c) changed = true; return u })
+    return changed ? { ...tree, children: next } : tree
   }
 
   const collectFolderIds = (node) => {
-    if (!node || node.type !== 'folder') {
-      return []
-    }
-
-    return [
-      node.id,
-      ...(node.children || []).flatMap((child) =>
-        child.type === 'folder' ? collectFolderIds(child) : [],
-      ),
-    ]
+    if (!node || node.type !== 'folder') return []
+    return [node.id, ...(node.children || []).flatMap(c => c.type === 'folder' ? collectFolderIds(c) : [])]
   }
 
-  const closeMenu = () => setContextMenu(null)
-
-  useEffect(() => {
-    const handlePointerDown = () => closeMenu()
-    const handleEscape = (event) => {
-      if (event.key === 'Escape') {
-        closeMenu()
-      }
-    }
-
-    window.addEventListener('pointerdown', handlePointerDown)
-    window.addEventListener('keydown', handleEscape)
-
-    return () => {
-      window.removeEventListener('pointerdown', handlePointerDown)
-      window.removeEventListener('keydown', handleEscape)
-    }
-  }, [])
-
   const folderMap = useMemo(() => {
-    const byId = new Map()
-    const itemById = new Map()
-
+    const byId = new Map(), itemById = new Map()
     const visit = (node, path = []) => {
       itemById.set(node.id, node)
       if (node.type === 'folder') {
-        const fullPath = [...path, node.name]
-        byId.set(node.id, { ...node, fullPath })
-        ;(node.children || []).forEach((child) => visit(child, fullPath))
+        byId.set(node.id, { ...node, fullPath: [...path, node.name] })
+        ;(node.children || []).forEach(c => visit(c, [...path, node.name]))
       }
     }
-
     visit(fileSystem)
     return { byId, itemById }
   }, [fileSystem])
 
-  const openDummyWindow = () => {
-    const id = `window-${Date.now()}-${Math.random().toString(36).slice(2, 8)}`
-    const offset = windows.length * 26
-    const nextWindow = {
-      id,
-      title: `My Computer ${windows.length + 1}`,
-      initialPosition: {
-        x: 52 + offset,
-        y: 46 + offset,
-      },
-      body: 'This is a dummy XP-style window for testing drag, focus, and close behavior.',
-    }
+  // ── Windows ──────────────────────────────────────────────────────────────
+  // Use a ref mirror so closures always see fresh window list
+  const windowsRef = useRef([])
+  const [windows, _setWindows] = useState([])
+  const setWindows = useCallback((updater) => {
+    _setWindows(prev => {
+      const next = typeof updater === 'function' ? updater(prev) : updater
+      windowsRef.current = next
+      return next
+    })
+  }, [])
 
-    setWindows((prev) => [...prev, nextWindow])
-    setWindowOrder((prev) => [...prev, id])
-  }
+  const [windowOrder, setWindowOrder] = useState([])
 
-  const openCalculatorWindow = () => {
-    const existingWindow = windows.find((windowItem) => windowItem.kind === 'calculator')
+  const focusWindow = useCallback((id) => {
+    setWindowOrder(o => [...o.filter(i => i !== id), id])
+  }, [])
 
-    if (existingWindow) {
-      setWindowOrder((prev) => {
-        const withoutTarget = prev.filter((item) => item !== existingWindow.id)
-        return [...withoutTarget, existingWindow.id]
-      })
+  // Track media windows the user explicitly closed so we don't reopen them
+  const closedMediaPids = useRef(new Set())
+
+  const closeWindow = useCallback((id) => {
+    setWindows(prev => {
+      const win = prev.find(w => w.id === id)
+      if (win?.kind === 'media') closedMediaPids.current.add(win.pid)
+      return prev.filter(w => w.id !== id)
+    })
+    setWindowOrder(o => o.filter(i => i !== id))
+  }, [setWindows])
+
+  // Cleanup window order when windows list shrinks
+  useEffect(() => {
+    setWindowOrder(o => {
+      const live = new Set(windows.map(w => w.id))
+      return o.filter(id => live.has(id))
+    })
+  }, [windows])
+
+  // Open an app window (singleton per kind)
+  const openAppWindow = useCallback((kind, title, ix = 120, iy = 80) => {
+    setIsStartOpen(false)
+    const existing = windowsRef.current.find(w => w.kind === kind)
+    if (existing) {
+      setWindowOrder(o => [...o.filter(i => i !== existing.id), existing.id])
       return
     }
+    const id = `${kind}-${++_wSerial}`
+    setWindows(prev => [...prev, { id, kind, title, initialPosition: { x: ix, y: iy } }])
+    setWindowOrder(o => [...o, id])
+  }, [setWindows])
 
-    const id = `calculator-window-${Date.now()}`
-    const nextWindow = {
-      id,
-      kind: 'calculator',
-      title: 'Calculator',
-      initialPosition: {
-        x: 360,
-        y: 84,
-      },
-    }
-
-    setWindows((prev) => [...prev, nextWindow])
-    setWindowOrder((prev) => [...prev, id])
-  }
-
-  const openFolderWindow = (folderId) => {
+  // Open a folder window
+  const openFolderWindow = useCallback((folderId) => {
+    setIsStartOpen(false)
     const folder = folderMap.byId.get(folderId)
-
-    if (!folder) {
+    if (!folder) return
+    const existing = windowsRef.current.find(w => w.kind === 'folder' && w.folderId === folderId)
+    if (existing) {
+      setWindowOrder(o => [...o.filter(i => i !== existing.id), existing.id])
       return
     }
+    const id = `folder-${folderId}-${++_wSerial}`
+    const offset = windowsRef.current.length * 22
+    setWindows(prev => [...prev, { id, kind: 'folder', folderId, title: folder.name, initialPosition: { x: 80 + offset, y: 60 + offset } }])
+    setWindowOrder(o => [...o, id])
+  }, [folderMap, setWindows])
 
-    const existingWindow = windows.find(
-      (windowItem) => windowItem.kind === 'folder' && windowItem.folderId === folderId,
-    )
+  // Remove windows for deleted folders
+  useEffect(() => {
+    setWindows(prev => prev.filter(w => w.kind !== 'folder' || folderMap.byId.has(w.folderId)))
+  }, [folderMap, setWindows])
 
-    if (existingWindow) {
-      setWindowOrder((prev) => {
-        const withoutTarget = prev.filter((item) => item !== existingWindow.id)
-        return [...withoutTarget, existingWindow.id]
-      })
-      return
+  const zById = useMemo(() => {
+    const m = new Map()
+    windowOrder.forEach((id, idx) => m.set(id, 30 + idx))
+    return m
+  }, [windowOrder])
+
+  // ── Scheduler ────────────────────────────────────────────────────────────
+  const scheduler = useScheduler()
+  const mediaPlayerRefs = useRef({})   // pid → React ref object
+
+  // Play/pause media on scheduler process changes
+  const prevRunningPid = useRef(null)
+  useEffect(() => {
+    const newPid = scheduler.runningProcess?.pid ?? null
+    const oldPid = prevRunningPid.current
+    if (oldPid !== null && oldPid !== newPid) {
+      mediaPlayerRefs.current[oldPid]?.current?.pause()
     }
-
-    const id = `folder-window-${folderId}-${Date.now()}`
-    const offset = windows.length * 24
-    const nextWindow = {
-      id,
-      kind: 'folder',
-      folderId,
-      title: folder.name,
-      initialPosition: {
-        x: 80 + offset,
-        y: 60 + offset,
-      },
+    if (newPid !== null && newPid !== oldPid) {
+      mediaPlayerRefs.current[newPid]?.current?.play()
     }
+    prevRunningPid.current = newPid
+  }, [scheduler.runningProcess?.pid])
 
-    setWindows((prev) => [...prev, nextWindow])
-    setWindowOrder((prev) => [...prev, id])
-  }
+  // Open a media player window for a new process (don't reopen manually closed ones)
+  const openMediaWindow = useCallback((process) => {
+    if (closedMediaPids.current.has(process.pid)) return
+    const id = `media-${process.pid}`
+    const existing = windowsRef.current.find(w => w.id === id)
+    if (existing) return
+    if (!mediaPlayerRefs.current[process.pid]) {
+      mediaPlayerRefs.current[process.pid] = { current: null }
+    }
+    const offset = windowsRef.current.length * 20
+    setWindows(prev => [...prev, { id, kind: 'media', pid: process.pid, title: `P${process.pid}: ${process.name}`, initialPosition: { x: 180 + offset, y: 80 + offset } }])
+    setWindowOrder(o => [...o, id])
+  }, [setWindows])
 
-  const closeWindow = (id) => {
-    setWindows((prev) => prev.filter((item) => item.id !== id))
-    setWindowOrder((prev) => prev.filter((item) => item !== id))
-  }
+  // Auto-open media windows for new processes
+  useEffect(() => {
+    scheduler.allProcesses.forEach(p => openMediaWindow(p))
+  }, [scheduler.allProcesses.length, openMediaWindow]) // eslint-disable-line
 
-  const createFolderIn = (parentFolderId) => {
+  // Handle double-click on media file: prompt burst time, create PCB
+  const handleOpenFile = useCallback((file) => {
+    const raw = window.prompt(`Set burst time (seconds) for "${file.name}":`, String(file.burstTime || 10))
+    if (raw === null) return
+    const bt = parseInt(raw, 10)
+    if (isNaN(bt) || bt <= 0) { window.alert('Please enter a positive number.'); return }
+    scheduler.addProcess({ ...file, burstTime: bt })
+  }, [scheduler])
+
+  // Handle End Task from Task Manager
+  const handleTerminate = useCallback((pid) => {
+    scheduler.terminateProcess(pid)
+    closedMediaPids.current.add(pid)
+    const id = `media-${pid}`
+    setWindows(prev => prev.filter(w => w.id !== id))
+    setWindowOrder(o => o.filter(i => i !== id))
+    if (mediaPlayerRefs.current[pid]) {
+      mediaPlayerRefs.current[pid].current?.pause()
+      delete mediaPlayerRefs.current[pid]
+    }
+  }, [scheduler, setWindows])
+
+  // Handle reset: also clear all media windows and refs
+  const handleReset = useCallback(() => {
+    scheduler.resetScheduler()
+    closedMediaPids.current.clear()
+    mediaPlayerRefs.current = {}
+    prevRunningPid.current = null
+    setWindows(prev => prev.filter(w => w.kind !== 'media'))
+    setWindowOrder(o => {
+      const mediaIds = new Set(windowsRef.current.filter(w => w.kind === 'media').map(w => w.id))
+      return o.filter(id => !mediaIds.has(id))
+    })
+  }, [scheduler, setWindows])
+
+  // ── Context Menu ─────────────────────────────────────────────────────────
+  const [contextMenu, setContextMenu] = useState(null)
+  const closeContextMenu = () => setContextMenu(null)
+
+  // ── Start Menu ───────────────────────────────────────────────────────────
+  const [isStartOpen, setIsStartOpen] = useState(false)
+
+  useEffect(() => {
+    const onDown = (e) => {
+      closeContextMenu()
+      if (!e.target.closest('.xp-start-button') && !e.target.closest('.xp-start-menu')) {
+        setIsStartOpen(false)
+      }
+    }
+    const onKey = (e) => { if (e.key === 'Escape') { closeContextMenu(); setIsStartOpen(false) } }
+    window.addEventListener('pointerdown', onDown)
+    window.addEventListener('keydown', onKey)
+    return () => { window.removeEventListener('pointerdown', onDown); window.removeEventListener('keydown', onKey) }
+  }, [])
+
+  // ── VFS Operations ───────────────────────────────────────────────────────
+  const createFolderIn = (pid) => {
     const name = window.prompt('Folder name:', 'New Folder')
-    if (!name || !name.trim()) {
-      return
-    }
-
-    const nextFolder = {
-      id: createId('folder'),
-      name: name.trim(),
-      type: 'folder',
-      children: [],
-    }
-
-    setFileSystem((previous) =>
-      updateNodeInTree(previous, parentFolderId, (node) => ({
-        ...node,
-        children: [...(node.children || []), nextFolder],
-      })),
-    )
+    if (!name?.trim()) return
+    setFileSystem(prev => updateNode(prev, pid, n => ({ ...n, children: [...(n.children || []), { id: mkId('f'), name: name.trim(), type: 'folder', children: [] }] })))
   }
 
-  const createFileIn = (parentFolderId) => {
+  const createFileIn = (pid) => {
     const name = window.prompt('File name:', 'New File.txt')
-    if (!name || !name.trim()) {
-      return
-    }
-
-    const fileName = name.trim()
-    const extension = fileName.includes('.') ? fileName.split('.').pop().toUpperCase() : 'TXT'
-
-    const nextFile = {
-      id: createId('file'),
-      name: fileName,
-      type: 'file',
-      extension,
-    }
-
-    setFileSystem((previous) =>
-      updateNodeInTree(previous, parentFolderId, (node) => ({
-        ...node,
-        children: [...(node.children || []), nextFile],
-      })),
-    )
+    if (!name?.trim()) return
+    const fn = name.trim(), ext = fn.includes('.') ? fn.split('.').pop().toUpperCase() : 'TXT'
+    setFileSystem(prev => updateNode(prev, pid, n => ({ ...n, children: [...(n.children || []), { id: mkId('x'), name: fn, type: 'file', extension: ext }] })))
   }
 
   const renameItem = (itemId) => {
     const item = folderMap.itemById.get(itemId)
-    if (!item) {
-      return
-    }
-
-    const nextName = window.prompt('Rename item:', item.name)
-    if (!nextName || !nextName.trim()) {
-      return
-    }
-
-    const cleanName = nextName.trim()
-    setFileSystem((previous) =>
-      updateNodeInTree(previous, itemId, (node) => ({
-        ...node,
-        name: cleanName,
-        extension:
-          node.type === 'file'
-            ? cleanName.includes('.')
-              ? cleanName.split('.').pop().toUpperCase()
-              : node.extension
-            : node.extension,
-      })),
-    )
+    if (!item) return
+    const name = window.prompt('Rename:', item.name)
+    if (!name?.trim()) return
+    const clean = name.trim()
+    setFileSystem(prev => updateNode(prev, itemId, n => ({ ...n, name: clean, extension: n.type === 'file' ? (clean.includes('.') ? clean.split('.').pop().toUpperCase() : n.extension) : n.extension })))
   }
 
   const deleteItem = (itemId) => {
     const item = folderMap.itemById.get(itemId)
-    if (!item) {
-      return
-    }
-
-    const shouldDelete = window.confirm(`Delete ${item.name}?`)
-    if (!shouldDelete) {
-      return
-    }
-
-    const removedFolderIds = item.type === 'folder' ? collectFolderIds(item) : []
-    setFileSystem((previous) => removeNodeFromTree(previous, itemId))
-
-    if (removedFolderIds.length > 0) {
-      const removedWindowIds = new Set(
-        windows
-          .filter(
-            (windowItem) =>
-              windowItem.kind === 'folder' && removedFolderIds.includes(windowItem.folderId),
-          )
-          .map((windowItem) => windowItem.id),
-      )
-
-      setWindows((previous) =>
-        previous.filter(
-          (windowItem) =>
-            !(windowItem.kind === 'folder' && removedFolderIds.includes(windowItem.folderId)),
-        ),
-      )
-      setWindowOrder((previous) => previous.filter((windowId) => !removedWindowIds.has(windowId)))
+    if (!item || !window.confirm(`Delete "${item.name}"?`)) return
+    const deadFolders = item.type === 'folder' ? collectFolderIds(item) : []
+    setFileSystem(prev => removeNode(prev, itemId))
+    if (deadFolders.length) {
+      setWindows(prev => prev.filter(w => !(w.kind === 'folder' && deadFolders.includes(w.folderId))))
     }
   }
 
-  const focusWindow = (id) => {
-    setWindowOrder((prev) => {
-      const withoutTarget = prev.filter((item) => item !== id)
-      return [...withoutTarget, id]
+  // ── Import Media ─────────────────────────────────────────────────────────
+  const handleImport = (e) => {
+    Array.from(e.target.files || []).forEach(file => {
+      const blobUrl = URL.createObjectURL(file)
+      const ext = file.name.split('.').pop()?.toUpperCase() || ''
+      const mediaType = ['mp4', 'webm', 'ogg', 'mov'].includes(ext.toLowerCase()) ? 'video' : 'audio'
+      setFileSystem(prev => ({ ...prev, children: [...prev.children, { id: mkId('imp'), name: file.name, type: 'file', extension: ext, mediaType, blobUrl, burstTime: 10 }] }))
     })
+    e.target.value = ''
   }
 
-  const zById = useMemo(() => {
-    const zMap = new Map()
-    windowOrder.forEach((id, index) => {
-      zMap.set(id, 30 + index)
-    })
-    return zMap
-  }, [windowOrder])
-
+  // ── Clock ────────────────────────────────────────────────────────────────
+  const [clockStr, setClockStr] = useState(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' }))
   useEffect(() => {
-    setWindows((previous) =>
-      previous.filter(
-        (windowItem) =>
-          windowItem.kind !== 'folder' || folderMap.byId.has(windowItem.folderId),
-      ),
-    )
-  }, [folderMap])
+    const t = setInterval(() => setClockStr(new Date().toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })), 15000)
+    return () => clearInterval(t)
+  }, [])
 
-  useEffect(() => {
-    setWindowOrder((previous) => {
-      const liveIds = new Set(windows.map((item) => item.id))
-      return previous.filter((id) => liveIds.has(id))
-    })
-  }, [windows])
+  // ─────────────────────────────────────────────────────────────────────────
+  // Desktop app shortcuts config (right-side)
+  const SHORTCUTS = [
+    { kind: 'task-manager',   title: 'Task Manager',          icon: <Activity size={20} />, label: 'Task\nManager', x: 60,  y: 60  },
+    { kind: 'memory-manager', title: 'Memory Manager',        icon: <Cpu size={20} />,      label: 'Memory\nManager', x: 100, y: 100 },
+    { kind: 'disk-scheduler', title: 'Disk Defragmenter',     icon: <HardDrive size={20} />, label: 'Disk\nDefrag', x: 150, y: 120 },
+    { kind: 'bankers-app',    title: 'Deadlock Control',      icon: <ShieldAlert size={20} />, label: 'Deadlock\nCMD', x: 200, y: 80  },
+    { kind: 'calculator',     title: 'Calculator',            icon: <Calculator size={20} />, label: 'Calculator', x: 360, y: 84  },
+  ]
 
+  // Start Menu programs list (all apps)
+  const START_APPS = [
+    { kind: 'memory-manager', title: 'Memory Manager',    sub: 'Page Replacement Simulator', icon: <Cpu size={22} />,        x: 100, y: 80  },
+    { kind: 'disk-scheduler', title: 'Disk Defragmenter', sub: 'Scheduling Visualizer',       icon: <HardDrive size={22} />,  x: 150, y: 100 },
+    { kind: 'bankers-app',    title: "Deadlock Control",  sub: "Banker's Algorithm",          icon: <ShieldAlert size={22} />, x: 200, y: 80  },
+    { kind: 'task-manager',   title: 'Task Manager',      sub: 'CPU Scheduler',               icon: <Activity size={22} />,   x: 60,  y: 60  },
+    { kind: 'calculator',     title: 'Calculator',        sub: 'Standard Calculator',         icon: <Calculator size={22} />, x: 360, y: 84  },
+  ]
+
+  // Window icon lookup
+  function WIcon({ w }) {
+    if (w.kind === 'folder')        return <FolderOpen size={13} />
+    if (w.kind === 'calculator')    return <Calculator size={13} />
+    if (w.kind === 'memory-manager') return <Cpu size={13} />
+    if (w.kind === 'disk-scheduler') return <HardDrive size={13} />
+    if (w.kind === 'bankers-app')   return <ShieldAlert size={13} />
+    if (w.kind === 'task-manager')  return <Activity size={13} />
+    if (w.kind === 'media') {
+      const p = scheduler.allProcesses.find(p => p.pid === w.pid)
+      return p?.mediaType === 'video' ? <Film size={13} /> : <Music size={13} />
+    }
+    return <File size={13} />
+  }
+
+  // ─────────────────────────────────────────────────────────────────────────
   return (
     <div className="h-screen w-screen overflow-hidden select-none">
+
+      {/* ── Desktop ── */}
       <main
         ref={desktopRef}
         className="xp-desktop relative h-[calc(100%-42px)] w-full overflow-hidden"
-        onContextMenu={(event) => {
-          event.preventDefault()
-          event.stopPropagation()
-          setContextMenu({ x: event.clientX, y: event.clientY, parentFolderId: 'root' })
-        }}
+        onContextMenu={e => { e.preventDefault(); setContextMenu({ x: e.clientX, y: e.clientY, parentFolderId: 'root' }) }}
+        onClick={() => setIsStartOpen(false)}
       >
-        <div className="pointer-events-none absolute inset-0 bg-[radial-gradient(circle_at_8%_10%,rgba(255,255,255,0.22),transparent_24%),radial-gradient(circle_at_90%_24%,rgba(132,213,255,0.28),transparent_34%)]" />
-
+        {/* VFS icons (left side) */}
         <DesktopDirectory
           rootFolder={fileSystem}
           onOpenFolder={openFolderWindow}
-          onShortcutContextMenu={(event) => {
-            event.preventDefault()
-            event.stopPropagation()
-            setContextMenu({ x: event.clientX, y: event.clientY, parentFolderId: 'root' })
-          }}
+          onOpenFile={handleOpenFile}
+          onShortcutContextMenu={(e) => { e.preventDefault(); e.stopPropagation(); setContextMenu({ x: e.clientX, y: e.clientY, parentFolderId: 'root' }) }}
         />
 
-        <section className="absolute right-3 top-3 z-20">
-          <button
-            type="button"
-            onClick={openCalculatorWindow}
-            className="xp-app-shortcut flex w-20 flex-col items-center gap-1 rounded p-1 text-center"
-          >
-            <span className="xp-calculator-icon" aria-hidden="true" />
-            <span className="text-[11px] leading-tight text-white [text-shadow:1px_1px_1px_rgba(0,0,0,0.7)]">
-              Calculator
-            </span>
-          </button>
+        {/* App shortcuts (right side) */}
+        <section className="absolute right-3 top-3 z-20 flex flex-col gap-5">
+          {SHORTCUTS.map(app => (
+            <button
+              key={app.kind}
+              onClick={() => openAppWindow(app.kind, app.title, app.x, app.y)}
+              className="group flex w-22 flex-col items-center gap-1 p-1 rounded border border-transparent hover:border-[#89b9ff]/60 hover:bg-[#1f63c7]/20"
+            >
+              <div className="w-9 h-9 bg-[#d4d0c8] border-2 border-[#ffffff] border-b-[#808080] border-r-[#808080] flex items-center justify-center text-[#0a246a] shadow-sm group-hover:border-b-[#0831d9] group-hover:border-r-[#0831d9]">
+                {app.icon}
+              </div>
+              <span className="text-[11px] text-white font-medium leading-tight text-center [text-shadow:1px_1px_2px_rgba(0,0,0,0.9)] whitespace-pre-line">{app.label}</span>
+            </button>
+          ))}
         </section>
 
-        {/* >{windows.length === 0 && (
-          <div className="pointer-events-none absolute left-6 top-8 w-[min(34rem,92vw)] rounded-md border border-sky-100/40 bg-white/20 px-4 py-3 text-white shadow-[inset_0_1px_0_rgba(255,255,255,0.45),0_6px_18px_rgba(0,0,0,0.35)] backdrop-blur-[1px]">
-            <p className="text-xs tracking-wide">Windows XP Sandbox</p>
-            <p className="mt-1 text-sm">Click a folder icon to open it in a window.</p>
-          </div
-        )} */}
+        {/* ── Windows ── */}
+        {windows.map(w => {
+          const process = w.kind === 'media' ? scheduler.allProcesses.find(p => p.pid === w.pid) : null
+          if (w.kind === 'media' && !process) return null
 
-        {windows.map((windowItem) => (
-          <Window
-            key={windowItem.id}
-            id={windowItem.id}
-            title={
-              windowItem.kind === 'folder'
-                ? folderMap.byId.get(windowItem.folderId)?.name || windowItem.title
-                : windowItem.title
-            }
-            desktopRef={desktopRef}
-            initialPosition={windowItem.initialPosition}
-            zIndex={zById.get(windowItem.id) ?? 30}
-            onClose={closeWindow}
-            onFocus={focusWindow}
-            onContentContextMenu={(event) => {
-              if (windowItem.kind !== 'folder') {
-                return
-              }
+          if (w.kind === 'media' && !mediaPlayerRefs.current[w.pid]) {
+            mediaPlayerRefs.current[w.pid] = { current: null }
+          }
 
-              event.preventDefault()
-              event.stopPropagation()
-              setContextMenu({
-                x: event.clientX,
-                y: event.clientY,
-                parentFolderId: windowItem.folderId,
-              })
-            }}
-          >
-            {windowItem.kind === 'folder' ? (
-              <>
-                <div className="mb-2 border-b border-[#d8d1ba] pb-1 text-[11px] text-slate-500">
-                  {(folderMap.byId.get(windowItem.folderId)?.fullPath || []).join(' > ')}
-                </div>
-                <FolderContents
-                  folder={folderMap.byId.get(windowItem.folderId)}
-                  onOpenFolder={openFolderWindow}
-                  onRenameItem={renameItem}
-                  onDeleteItem={deleteItem}
+          return (
+            <Window
+              key={w.id}
+              id={w.id}
+              title={w.kind === 'folder' ? (folderMap.byId.get(w.folderId)?.name || w.title) : w.title}
+              desktopRef={desktopRef}
+              initialPosition={w.initialPosition}
+              zIndex={zById.get(w.id) ?? 30}
+              onClose={closeWindow}
+              onFocus={focusWindow}
+            >
+              {w.kind === 'folder' ? (
+                <FolderContents folder={folderMap.byId.get(w.folderId)} onOpenFolder={openFolderWindow} onOpenFile={handleOpenFile} onRenameItem={renameItem} onDeleteItem={deleteItem} />
+              ) : w.kind === 'calculator' ? (
+                <CalculatorApp />
+              ) : w.kind === 'memory-manager' ? (
+                <MemoryManagerApp />
+              ) : w.kind === 'disk-scheduler' ? (
+                <DiskSchedulerApp />
+              ) : w.kind === 'bankers-app' ? (
+                <BankersAlgorithmApp />
+              ) : w.kind === 'task-manager' ? (
+                <TaskManagerApp
+                  allProcesses={scheduler.allProcesses}
+                  ganttLog={scheduler.ganttLog}
+                  virtualClock={scheduler.virtualClock}
+                  metrics={scheduler.metrics}
+                  runningProcess={scheduler.runningProcess}
+                  onTerminate={handleTerminate}
                 />
-              </>
-            ) : windowItem.kind === 'calculator' ? (
-              <CalculatorApp />
-            ) : (
-              <p className="text-[13px] leading-relaxed text-slate-700">{windowItem.body}</p>
-            )}
-          </Window>
-        ))}
+              ) : w.kind === 'media' ? (
+                <MediaPlayerApp
+                  ref={el => { if (mediaPlayerRefs.current[w.pid]) mediaPlayerRefs.current[w.pid].current = el }}
+                  process={process}
+                />
+              ) : null}
+            </Window>
+          )
+        })}
+
+        {/* Context Menu */}
+        {contextMenu && (
+          <ContextMenu
+            x={contextMenu.x}
+            y={contextMenu.y}
+            onNewFolder={() => createFolderIn(contextMenu.parentFolderId)}
+            onNewFile={() => createFileIn(contextMenu.parentFolderId)}
+            onClose={closeContextMenu}
+          />
+        )}
       </main>
 
-      {contextMenu && (
-        <ContextMenu
-          x={contextMenu.x}
-          y={contextMenu.y}
-          onNewFolder={() => createFolderIn(contextMenu.parentFolderId)}
-          onNewFile={() => createFileIn(contextMenu.parentFolderId)}
-          onClose={closeMenu}
-        />
+      {/* ── Windows XP Start Menu ── */}
+      {isStartOpen && (
+        <div
+          className="xp-start-menu absolute left-0 bottom-[42px] z-[9999] flex flex-col rounded-tr-[10px] overflow-hidden"
+          style={{
+            width: 420,
+            border: '2px solid #0831d9',
+            boxShadow: '4px 0 8px rgba(0,0,0,0.5), 0 -4px 8px rgba(0,0,0,0.3)',
+          }}
+          onPointerDown={e => e.stopPropagation()}
+        >
+          {/* Header */}
+          <div style={{ background: 'linear-gradient(180deg,#1e6bce 0%,#1452c6 50%,#113da0 100%)', padding: '8px 10px', display: 'flex', alignItems: 'center', gap: 10 }}>
+            <div style={{ width: 44, height: 44, borderRadius: 4, border: '2px solid rgba(255,255,255,0.7)', overflow: 'hidden', background: 'white', flexShrink: 0 }}>
+              <img src="https://api.dicebear.com/7.x/bottts/svg?seed=XPUser" alt="user" style={{ width: '100%', height: '100%' }} />
+            </div>
+            <span style={{ color: 'white', fontWeight: 'bold', fontSize: 14, fontFamily: 'Tahoma, sans-serif', textShadow: '1px 1px 2px rgba(0,0,0,0.6)' }}>Administrator</span>
+          </div>
+
+          {/* Body — two columns */}
+          <div style={{ display: 'flex', background: 'white', height: 320 }}>
+
+            {/* Left: Programs */}
+            <div style={{ width: '55%', display: 'flex', flexDirection: 'column', borderRight: '1px solid #d4d0c8', overflowY: 'auto' }}>
+              <div style={{ padding: '4px 8px', fontSize: 10, color: '#666', fontFamily: 'Tahoma', fontStyle: 'italic', borderBottom: '1px solid #e0ddd5' }}>
+                All Programs
+              </div>
+              {START_APPS.map(app => (
+                <button
+                  key={app.kind}
+                  onClick={() => openAppWindow(app.kind, app.title, app.x, app.y)}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%', fontFamily: 'Tahoma, sans-serif' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#2f71cd'; e.currentTarget.style.color = 'white' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'black' }}
+                >
+                  <div style={{ width: 28, height: 28, background: '#d4d0c8', border: '1px solid #808080', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#0a246a' }}>
+                    {app.icon}
+                  </div>
+                  <div style={{ display: 'flex', flexDirection: 'column', lineHeight: 1.3 }}>
+                    <span style={{ fontSize: 12, fontWeight: 'bold' }}>{app.title}</span>
+                    {app.sub && <span style={{ fontSize: 10, opacity: 0.7 }}>{app.sub}</span>}
+                  </div>
+                </button>
+              ))}
+
+              <div style={{ margin: '4px 8px', borderTop: '1px solid #d4d0c8' }} />
+
+              <button
+                onClick={() => openFolderWindow('root')}
+                style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%', fontFamily: 'Tahoma, sans-serif' }}
+                onMouseEnter={e => { e.currentTarget.style.background = '#2f71cd'; e.currentTarget.style.color = 'white' }}
+                onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = 'black' }}
+              >
+                <div style={{ width: 28, height: 28, background: '#d4d0c8', border: '1px solid #808080', display: 'flex', alignItems: 'center', justifyContent: 'center', flexShrink: 0, color: '#0a246a' }}>
+                  <Folder size={18} />
+                </div>
+                <span style={{ fontSize: 12, fontWeight: 'bold' }}>Open Desktop</span>
+              </button>
+            </div>
+
+            {/* Right: Places */}
+            <div style={{ width: '45%', background: '#d3e5fa', borderLeft: '1px solid #84b5ed', display: 'flex', flexDirection: 'column' }}>
+              <div style={{ padding: '4px 8px', fontSize: 10, color: '#002b5e', fontFamily: 'Tahoma', fontWeight: 'bold', textTransform: 'uppercase', letterSpacing: 1, borderBottom: '1px solid #84b5ed' }}>
+                Places
+              </div>
+              {[
+                { label: 'My Documents',  icon: <FolderOpen size={18} />,  action: () => openFolderWindow('root') },
+                { label: 'Task Manager', icon: <Activity size={18} />,    action: () => openAppWindow('task-manager', 'Task Manager', 60, 60) },
+              ].map(({ label, icon, action }) => (
+                <button
+                  key={label}
+                  onClick={action}
+                  style={{ display: 'flex', alignItems: 'center', gap: 8, padding: '6px 10px', background: 'transparent', border: 'none', cursor: 'pointer', textAlign: 'left', width: '100%', fontFamily: 'Tahoma, sans-serif', color: '#002b5e' }}
+                  onMouseEnter={e => { e.currentTarget.style.background = '#2f71cd'; e.currentTarget.style.color = 'white' }}
+                  onMouseLeave={e => { e.currentTarget.style.background = 'transparent'; e.currentTarget.style.color = '#002b5e' }}
+                >
+                  {icon}
+                  <span style={{ fontSize: 12, fontWeight: 'bold' }}>{label}</span>
+                </button>
+              ))}
+            </div>
+          </div>
+
+          {/* Footer */}
+          <div style={{ background: 'linear-gradient(180deg,#1e6bce 0%,#1452c6 50%,#113da0 100%)', padding: '5px 10px', display: 'flex', justifyContent: 'flex-end', alignItems: 'center', borderTop: '1px solid #0831d9' }}>
+            <button
+              onClick={() => setIsStartOpen(false)}
+              style={{ display: 'flex', alignItems: 'center', gap: 5, color: 'white', background: 'none', border: '1px solid rgba(255,255,255,0.4)', padding: '3px 10px', cursor: 'pointer', fontFamily: 'Tahoma', fontSize: 11, fontWeight: 'bold', borderRadius: 2 }}
+              onMouseEnter={e => e.currentTarget.style.background = 'rgba(255,255,255,0.15)'}
+              onMouseLeave={e => e.currentTarget.style.background = 'none'}
+            >
+              Log Off
+            </button>
+          </div>
+        </div>
       )}
 
-      <footer className="xp-taskbar relative z-50 flex h-10.5 items-center justify-between px-1.5">
+      {/* ── Taskbar ── */}
+      <footer className="xp-taskbar relative z-50 flex h-[42px] items-center justify-between pr-1.5">
+        {/* Start Button */}
         <button
           type="button"
-          onClick={openDummyWindow}
-          className="xp-start-button inline-flex items-center gap-1.5 rounded-r-xl px-5 py-1.5 text-sm font-bold text-white"
+          onClick={e => { e.stopPropagation(); setIsStartOpen(s => !s) }}
+          className="xp-start-button inline-flex items-center gap-1.5 rounded-r-[14px] px-5 text-sm font-bold italic text-white h-full"
         >
-          <span className="inline-block h-4 w-4 rounded-full bg-white/90" />
-          Start
+          {/* Windows XP 4-colour flag */}
+          <span className="not-italic flex shrink-0" style={{ width: 16, height: 16, gap: 1, flexWrap: 'wrap' }}>
+            <span style={{ width: 7, height: 7, background: '#e74c3c', borderRadius: 1 }} />
+            <span style={{ width: 7, height: 7, background: '#2ecc71', borderRadius: 1 }} />
+            <span style={{ width: 7, height: 7, background: '#3498db', borderRadius: 1 }} />
+            <span style={{ width: 7, height: 7, background: '#f1c40f', borderRadius: 1 }} />
+          </span>
+          <span className="drop-shadow-md pr-1">start</span>
         </button>
 
+        {/* Open window buttons */}
+        <div className="flex-1 flex px-2 gap-1 overflow-x-auto items-center h-full py-1.5">
+          {windows.map(w => (
+            <button
+              key={w.id}
+              onClick={() => focusWindow(w.id)}
+              className={`max-w-[160px] flex-1 truncate px-2 h-full text-[11px] text-white rounded-sm border ${
+                windowOrder[windowOrder.length - 1] === w.id
+                  ? 'bg-[#1b5cc9] border-[#0f43ab] shadow-[inset_0_2px_4px_rgba(0,0,0,0.3)] font-bold'
+                  : 'bg-[#3f8af2] border-[#89b9ff] hover:brightness-110 shadow-[inset_0_1px_0_rgba(255,255,255,0.4)]'
+              } text-left flex items-center gap-1`}
+            >
+              <WIcon w={w} />
+              <span className="truncate">{w.title}</span>
+            </button>
+          ))}
+        </div>
+
+        {/* Scheduler controls */}
+        <div className="flex items-center gap-1.5 px-1.5 border-l border-[#89b9ff]/50 h-full py-1.5">
+          <select
+            value={scheduler.algorithm}
+            onChange={e => scheduler.setAlgorithm(e.target.value)}
+            className="text-[10px] bg-[#1a4ba5] text-white border border-[#89b9ff] px-1 py-0.5 h-full rounded-none"
+          >
+            <option value="fcfs">FCFS</option>
+            <option value="rr">Round Robin</option>
+          </select>
+          {scheduler.algorithm === 'rr' && (
+            <div className="flex items-center gap-0.5 text-[10px] text-white">
+              <span>Q=</span>
+              <input
+                type="number" min={1} max={10}
+                value={scheduler.rrQuantum}
+                onChange={e => scheduler.setRrQuantum(Number(e.target.value))}
+                className="w-8 bg-[#1a4ba5] text-white border border-[#89b9ff] text-center px-0.5"
+              />
+            </div>
+          )}
+          <button onClick={handleReset} title="Reset Scheduler" className="text-white hover:text-yellow-300">
+            <RotateCcw size={13} />
+          </button>
+        </div>
+
+        {/* Import Media */}
         <button
-          type="button"
-          onClick={() => openFolderWindow('documents')}
-          className="xp-quick-launch rounded px-3 py-1 text-xs font-semibold text-slate-100"
+          onClick={() => importRef.current?.click()}
+          className="flex items-center gap-1 text-[10px] text-white border border-[#89b9ff] px-2 py-0.5 hover:brightness-110 bg-[#1a4ba5] mx-1"
         >
-          Open Documents
+          <Upload size={11} /> Import
         </button>
+        <input ref={importRef} type="file" accept=".mp4,.mp3,.webm,.ogg,.wav" multiple className="hidden" onChange={handleImport} />
 
-        <div className="xp-clock rounded px-3 py-1 text-xs text-white/95">FS Ready</div>
+        {/* Clock */}
+        <div className="xp-clock px-3 py-1 text-[11px] text-white/95 flex items-center h-[28px] mr-1">
+          {clockStr}
+        </div>
       </footer>
     </div>
   )
 }
-
-export default App

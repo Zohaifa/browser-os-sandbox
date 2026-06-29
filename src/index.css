@@ -26,10 +26,11 @@ body {
 }
 
 .xp-desktop {
-  background:
-    radial-gradient(circle at 20% 18%, rgba(255, 255, 255, 0.18), transparent 30%),
-    radial-gradient(circle at 87% 24%, rgba(146, 210, 255, 0.25), transparent 35%),
-    linear-gradient(180deg, #4f95ff 0%, #2e7be8 62%, #2a67cf 100%);
+  background-color: #2e7be8;
+  background-image: url('/download.jpg');
+  background-size: cover;
+  background-position: center;
+  background-repeat: no-repeat;
 }
 
 .xp-taskbar {
